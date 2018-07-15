@@ -32,13 +32,26 @@ import java.util.logging.Logger;
  * @description
  * @date 2018.07.15 19:05
  */
-public class WebSocketServerHandler extends SimpleChannelInboundHandler<Object> {
+public class NettyServerHandler extends SimpleChannelInboundHandler<Object> {
 
     private static String webSocketURL = "ws://localhost:9999/websocket";
     private static ChannelGroup group = new DefaultChannelGroup(GlobalEventExecutor.INSTANCE);
     private static Logger logger = Logger.getLogger(WebSocketServerHandshaker.class.getName());
 
     private WebSocketServerHandshaker handshaker;
+
+    //每个channel都有一个唯一的id值
+    @Override
+    public void handlerAdded(ChannelHandlerContext ctx) throws Exception {
+        //打印出channel唯一值，asLongText方法是channel的id的全名
+        System.out.println("handlerAdded：" + ctx.channel().id().asLongText());
+    }
+
+    @Override
+    public void handlerRemoved(ChannelHandlerContext ctx) throws Exception {
+        System.out.println("handlerRemoved：" + ctx.channel().id().asLongText());
+    }
+
 
     @Override
     public void channelActive(ChannelHandlerContext ctx) throws Exception {
@@ -56,10 +69,10 @@ public class WebSocketServerHandler extends SimpleChannelInboundHandler<Object> 
     protected void channelRead0(ChannelHandlerContext ctx, Object msg) throws Exception {
         System.out.println("server accepted msg:" + msg);
         //ctx.channel().writeAndFlush("server accepted msg:" + msg);
-        if (msg instanceof FullHttpRequest) {
+        if (msg instanceof FullHttpRequest) {//如果是HTTP请求，进行HTTP操作
             handleHttpRequest(ctx, ((FullHttpRequest) msg));
             System.out.println("msg instanceof FullHttpRequest");
-        } else if (msg instanceof WebSocketFrame) {
+        } else if (msg instanceof WebSocketFrame) {//如果是Websocket请求，则进行websocket操作
             handlerWebSocketFrame(ctx, (WebSocketFrame) msg);
             System.out.println("msg instanceof WebSocketFrame");
         } else {

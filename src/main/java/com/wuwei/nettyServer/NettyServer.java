@@ -4,17 +4,19 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import io.netty.bootstrap.ServerBootstrap;
+import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelInitializer;
 import io.netty.channel.ChannelPipeline;
 import io.netty.channel.EventLoopGroup;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
-import io.netty.handler.codec.LengthFieldBasedFrameDecoder;
-import io.netty.handler.codec.LengthFieldPrepender;
-import io.netty.handler.codec.string.StringDecoder;
-import io.netty.handler.codec.string.StringEncoder;
-import io.netty.util.CharsetUtil;
+import io.netty.handler.codec.http.HttpObjectAggregator;
+import io.netty.handler.codec.http.HttpServerCodec;
+import io.netty.handler.codec.http.websocketx.WebSocketServerProtocolHandler;
+import io.netty.handler.logging.LogLevel;
+import io.netty.handler.logging.LoggingHandler;
+import io.netty.handler.stream.ChunkedWriteHandler;
 
 /**
  * @author wuwei
@@ -48,20 +50,30 @@ public class NettyServer {
             ServerBootstrap bootstrap = new ServerBootstrap();
             bootstrap.group(bossGroup, workerGroup);
             bootstrap.channel(NioServerSocketChannel.class);
+            bootstrap.handler(new LoggingHandler(LogLevel.INFO));
             bootstrap.childHandler(new ChannelInitializer<SocketChannel>() {
                 @Override
                 public void initChannel(SocketChannel ch) throws Exception {
                     ChannelPipeline pipeline = ch.pipeline();
-                    pipeline.addLast("frameDecoder", new LengthFieldBasedFrameDecoder(Integer.MAX_VALUE, 0, 4, 0, 4));
-                    pipeline.addLast("frameEncoder", new LengthFieldPrepender(4));
-                    pipeline.addLast("decoder", new StringDecoder(CharsetUtil.UTF_8));
-                    pipeline.addLast("encoder", new StringEncoder(CharsetUtil.UTF_8));
-                    pipeline.addLast(new WebSocketServerHandler());
+                    //websocket协议本身是基于http协议的，所以这边也要使用http解编码器
+                    pipeline.addLast("httpCodec", new HttpServerCodec());
+                    //以块的方式来写的处理器
+                    pipeline.addLast("httpChunked",new ChunkedWriteHandler());
+                    //netty是基于分段请求的，HttpObjectAggregator的作用是将请求分段再聚合,参数是聚合字节的最大长度
+                    pipeline.addLast("aggregator",new HttpObjectAggregator(64*1024));
+                    //ws://server:port/context_path
+                    //ws://localhost:9999/websocket
+                    //参数指的是contex_path
+                    pipeline.addLast(new WebSocketServerProtocolHandler("/websocket"));
+//                    pipeline.addLast("frameDecoder", new LengthFieldBasedFrameDecoder(Integer.MAX_VALUE, 0, 4, 0, 4));
+//                    pipeline.addLast("frameEncoder", new LengthFieldPrepender(4));
+//                    pipeline.addLast("decoder", new StringDecoder(CharsetUtil.UTF_8));
+//                    pipeline.addLast("encoder", new StringEncoder(CharsetUtil.UTF_8));
+                    pipeline.addLast("websSocketHandler", new NettyServerHandler());
                 }
             });
-            bootstrap.bind(HOST, PORT).sync();
-//            Channel ch = bootstrap.bind(new InetSocketAddress(HOST, PORT)).sync().channel();
-//            ch.closeFuture().sync();
+            ChannelFuture future = bootstrap.bind(HOST, PORT).sync();
+            //future.channel().closeFuture().sync(); //相当于在这里阻塞，直到server channel关闭
             logger.log(Level.INFO, "Netty服务端已启动...");
         } catch (Exception e) {
             logger.log(Level.SEVERE, null, e);
