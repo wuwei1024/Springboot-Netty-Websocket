@@ -57,7 +57,7 @@ public class NettyServer {
      * SpringBoot项目启动后, 自动启动WebSocket Netty服务端
      */
     @PostConstruct
-    public void startUpWebSocketServer() {
+    public void startupWebSocketServer() {
         new Thread(this::run).start();
     }
 
