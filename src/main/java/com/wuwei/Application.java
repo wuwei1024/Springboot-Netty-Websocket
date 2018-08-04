@@ -5,8 +5,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 /**
  * @author wuwei
- * @description
- * @date 2018.07.15 17:58
+ * @since 2018.07.15 17:58
  */
 @SpringBootApplication
 public class Application {

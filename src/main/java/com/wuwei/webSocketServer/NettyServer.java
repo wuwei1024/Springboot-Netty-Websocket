@@ -1,42 +1,47 @@
-package com.wuwei.nettyServer;
+package com.wuwei.webSocketServer;
 
-import io.netty.bootstrap.ServerBootstrap;
-import io.netty.channel.*;
-import io.netty.channel.nio.NioEventLoopGroup;
-import io.netty.channel.socket.SocketChannel;
-import io.netty.channel.socket.nio.NioServerSocketChannel;
-import io.netty.handler.codec.LineBasedFrameDecoder;
-import io.netty.handler.codec.string.StringDecoder;
-import io.netty.handler.codec.string.StringEncoder;
-import io.netty.handler.logging.LogLevel;
-import io.netty.handler.logging.LoggingHandler;
-import io.netty.util.CharsetUtil;
-import org.springframework.stereotype.Service;
-
-import javax.annotation.PostConstruct;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import io.netty.bootstrap.ServerBootstrap;
+import io.netty.channel.ChannelFuture;
+import io.netty.channel.ChannelInitializer;
+import io.netty.channel.ChannelPipeline;
+import io.netty.channel.EventLoopGroup;
+import io.netty.channel.nio.NioEventLoopGroup;
+import io.netty.channel.socket.SocketChannel;
+import io.netty.channel.socket.nio.NioServerSocketChannel;
+import io.netty.handler.codec.http.HttpObjectAggregator;
+import io.netty.handler.codec.http.HttpServerCodec;
+import io.netty.handler.codec.http.websocketx.WebSocketServerProtocolHandler;
+import io.netty.handler.logging.LogLevel;
+import io.netty.handler.logging.LoggingHandler;
+import io.netty.handler.stream.ChunkedWriteHandler;
+import org.springframework.stereotype.Service;
+
+import javax.annotation.PostConstruct;
+
 /**
  * @author wuwei
- * @since  2018/7/19 17:57
- * 监听Socket客户端连接的Netty服务端
+ * @since 2018.07.15 18:40
+ * 监听WebSocket连接的Netty服务端
  */
 @Service
 public class NettyServer {
 
     private static final String HOST = "127.0.0.1";
-    private static final int PORT = 8888;
+    private static final int PORT = 9999;
+    private static final String WEB_SOCKET_PATH = "/websocket";
 
     /**
      * 用于分配处理业务线程的线程组个数
      */
-    protected static final int GROUP_SIZE = Runtime.getRuntime().availableProcessors() * 2; // 默认
+    private static final int GROUP_SIZE = Runtime.getRuntime().availableProcessors() * 2; // 默认
 
     /**
      * 业务处理线程大小
      */
-    protected static final int THREAD_SIZE = 4;
+    private static final int THREAD_SIZE = 4;
 
     /**
      * NioEventLoopGroup实际上就是个线程池,
@@ -52,7 +57,7 @@ public class NettyServer {
      * SpringBoot项目启动后, 自动启动WebSocket Netty服务端
      */
     @PostConstruct
-    private void startupNettyServer() {
+    public void startUpWebSocketServer() {
         new Thread(this::run).start();
     }
 
@@ -66,22 +71,24 @@ public class NettyServer {
                 @Override
                 public void initChannel(SocketChannel ch) {
                     ChannelPipeline pipeline = ch.pipeline();
-                    ch.pipeline().addLast("frameDecoder", new LineBasedFrameDecoder(1024));
-                    pipeline.addLast("decoder", new StringDecoder(CharsetUtil.UTF_8));
-                    pipeline.addLast("encoder", new StringEncoder(CharsetUtil.UTF_8));
-                    pipeline.addLast("handler", new NettyServerHandler());
+                    //websocket协议本身是基于http协议的，所以这边也要使用http解编码器
+                    pipeline.addLast("httpCodec", new HttpServerCodec());
+                    //以块的方式来写的处理器
+                    pipeline.addLast("httpChunked", new ChunkedWriteHandler());
+                    //netty是基于分段请求的，HttpObjectAggregator的作用是将请求分段再聚合,参数是聚合字节的最大长度
+                    pipeline.addLast("aggregator", new HttpObjectAggregator(64 * 1024));
+                    pipeline.addLast("webSocketPath", new WebSocketServerProtocolHandler(WEB_SOCKET_PATH));
+                    pipeline.addLast("webSocketHandler", new NettyServerHandler());
                 }
             });
-            bootstrap.option(ChannelOption.SO_BACKLOG, 128);
-            bootstrap.childOption(ChannelOption.SO_KEEPALIVE, true);
             ChannelFuture future = bootstrap.bind(HOST, PORT).sync();
-            logger.log(Level.INFO, "Netty服务端已启动，等待客户端连接...");
+            logger.log(Level.INFO, "WebSocket Netty服务端已启动，等待客户端连接...");
             future.channel().closeFuture().sync(); //相当于在这里阻塞，直到server channel关闭
         } catch (Exception e) {
             logger.log(Level.SEVERE, null, e);
         } finally {
-            workerGroup.shutdownGracefully();
             bossGroup.shutdownGracefully();
+            workerGroup.shutdownGracefully();
         }
     }
 }
